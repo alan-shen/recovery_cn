@@ -1,0 +1,103 @@
+
+ 33 #define CN_SUPPORT
+=====================================================
+
+1.把字库文件替换为附件中的汉字字库(bootable/recovery/minui/graphics.c):
+
+ 34 #ifdef CN_SUPPORT
+ 35 #include "font_10x18_cn.h"
+ 36 #else
+ 37 #include "font_10x18.h"
+ 38 #endif
+ 39 #include "minui.h"
+
+2.替换 Graphics 字符显示接口 gr_text():(bootable/recovery/minui/graphics.c)
+
+228 #ifdef CN_SUPPORT
+229 const unsigned cw_en = 10;
+230 int getGBCharID(unsigned c1, unsigned c2)
+231 {   
+232     if (c1 >= 0xB0 && c1 <=0xF7 && c2>=0xA1 && c2<=0xFE)
+233     {   
+234         return (c1-0xB0)*94+c2-0xA1;
+235     }
+236     return -1;
+237 }
+238 int getUNICharID(unsigned short unicode)
+239 {   
+240     int i; 
+241     for (i = 0; i < UNICODE_NUM; i++) {
+242         if (unicode == unicodemap[i]) return i;
+243     }
+244     return -1;
+245 }
+246 
+247 int gr_text(int x, int y, const char *s)
+248 {   
+249     GGLContext *gl = gr_context;
+250     GRFont *font = gr_font;
+251     unsigned off;
+252     unsigned off2;
+253     unsigned off3;
+254     int id;
+255     unsigned short unicode;
+256     
+257     y -= font->ascent;
+258     
+259     gl->bindTexture(gl, &font->texture);
+260     gl->texEnvi(gl, GGL_TEXTURE_ENV, GGL_TEXTURE_ENV_MODE, GGL_REPLACE);
+261     gl->texGeni(gl, GGL_S, GGL_TEXTURE_GEN_MODE, GGL_ONE_TO_ONE);
+262     gl->texGeni(gl, GGL_T, GGL_TEXTURE_GEN_MODE, GGL_ONE_TO_ONE);
+263     gl->enable(gl, GGL_TEXTURE_2D);
+264 
+265     
+266     while((off = *s++)) {
+267         if (off < 0x80)
+268         {   
+269             off -= 32;
+270             if (off < 96) {
+271                 if ((x + cw_en) >= gr_fb_width()) return x;
+272                 gl->texCoord2i(gl, (off * font->cwidth) - x, 0 - y);
+273                 gl->recti(gl, x, y, x + cw_en, y + font->cheight);
+274             }
+275             x += cw_en;
+276         }
+277         else
+278         {
+279             if ((off & 0xF0) == 0xE0)
+280             {
+281                 off2 = *s++;
+282                 off3 = *s++;
+283                 unicode = (off & 0x1F) << 12;
+284                 unicode |= (off2 & 0x3F) << 6;
+285                 unicode |= (off3 & 0x3F);
+286                 id = getUNICharID(unicode);
+287                 //LOGI("%X %X %X  %X  %d", off, off2, off3, unicode, id);
+288                 if (id >= 0) {
+289                     if ((x + font->cwidth) >= gr_fb_width()) return x;
+290                     gl->texCoord2i(gl, ((id % 96) * font->cwidth) - x, (id / 96 + 1) * font->cheight - y);
+291                     gl->recti(gl, x, y, x + font->cwidth, y + font->cheight);
+292                     x += font->cwidth;
+293                 } else {
+294                     x += font->cwidth;
+295                 }
+296             } else {
+297                 x += cw_en;
+298             }
+299         }
+300     }
+301 
+302 
+303     return x;
+304 }
+305 
+306 #else
+307 int gr_text(int x, int y, const char *s)
+
+.....
+
+331 }
+332 #endif
+
+3.再在源码中将菜单或ui->Print的内容改为中文, 重新编译就 OK 了.
+
